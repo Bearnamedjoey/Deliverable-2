@@ -1,0 +1,327 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Cmd+Shift+Enter*. 
+
+***//Cluster Analysis//***
+
+```{r}
+rm(list = ls()) 
+```
+
+```{r}
+link='https://github.com/Bearnamedjoey/guided1/raw/main/Updated_Country_Comparison.csv'
+```
+
+```{r}
+myFile=url(link)
+```
+
+```{r}
+fromPy=read.csv(file = myFile)
+```
+
+```{r}
+row.names(fromPy)=NULL
+```
+
+```{r}
+str(fromPy)
+```
+
+```{r}
+dataToCluster=fromPy[,-c(1)]
+```
+
+```{r}
+row.names(dataToCluster)=fromPy$Country
+```
+
+```{r}
+set.seed(999)
+```
+
+```{r}
+library(cluster)
+distanceMatrix=daisy(x=dataToCluster, metric = "gower")
+```
+
+```{r}
+projectedData = cmdscale(distanceMatrix, k=2)
+```
+
+```{r}
+fromPy$dim1 = projectedData[,1]
+fromPy$dim2 = projectedData[,2]
+```
+
+```{r}
+library(ggplot2)
+base= ggplot(data=fromPy,
+             aes(x=dim1, y=dim2,
+                 label=Country)) 
+base + geom_text(size=2)
+```
+```{r}
+hc = hclust(distanceMatrix)
+```
+
+```{r}
+plot(hc,hang = -1,cex=0.5)
+```
+```{r}
+NumberOfClusterDesired=4
+
+library(factoextra)
+fviz_nbclust(dataToCluster, 
+             hcut,
+             diss=distanceMatrix,
+             method = "gap_stat",
+             k.max = 10,
+             verbose = F,
+             hc_func = "agnes")
+```
+```{r}
+res.agnes= hcut(distanceMatrix, 
+                k = NumberOfClusterDesired,
+                isdiss=TRUE,
+                hc_func='agnes',
+                hc_method = "ward.D2")
+```
+
+```{r}
+fromPy$agn=as.factor(res.agnes$cluster)
+```
+
+```{r}
+aggregate(data=fromPy,
+          Airports~agn,
+          FUN=mean)
+```
+
+```{r}
+library(dplyr)
+fromPy$agn=dplyr::recode_factor(fromPy$agn, 
+                  `4`='1',`1`='4',`2`='3',`3`='2',.ordered = T)
+```
+
+```{r}
+fviz_silhouette(res.agnes)
+```
+```{r}
+agnEval=data.frame(res.agnes$silinfo$widths)
+agnPoor=rownames(agnEval[agnEval$sil_width<0,])
+```
+
+
+
+```{r}
+library("qpcR") 
+```
+
+
+```{r}
+bad_Clus=as.data.frame(qpcR:::cbind.na(sort(agnPoor)))
+names(bad_Clus)=c("agn")
+bad_Clus
+```
+
+```{r}
+library(ggplot2)
+```
+
+
+```{r}
+base= ggplot(data=fromPy,
+             aes(x=dim1, y=dim2,
+                 label=Country)) 
+agnPlot=base + labs(title = "AGNES") + geom_point(size=2,
+                                              aes(color=agn),
+                                              show.legend = T) 
+```
+
+```{r}
+library(ggpubr)
+
+ggarrange(agnPlot,ncol = 1,common.legend = T)
+```
+
+```{r}
+LABELagn=ifelse(fromPy$Country%in%agnPoor,fromPy$Country,"")
+```
+
+```{r}
+library(ggrepel)
+```
+
+
+```{r}
+agnPlot= agnPlot + 
+         geom_text_repel(aes(label=LABELagn),
+                         max.overlaps = 50,
+                         min.segment.length = unit(0, 'lines'))
+```
+
+```{r}
+ggarrange(agnPlot, 
+          ncol = 1,
+          common.legend = T)
+
+```
+
+```{r}
+library(factoextra)
+```
+
+
+```{r}
+fviz_dend(res.agnes,
+          k=NumberOfClusterDesired, 
+          cex = 0.45, 
+          horiz = T,
+          main = "AGNES approach")
+```
+```{r}
+table(fromPy$Gini.Index,fromPy$agn)
+```
+
+***//Factor Analysis//***
+
+```{r}
+dataForFA=dataToCluster
+```
+
+```{r}
+library(polycor)
+corMatrix=polycor::hetcor(dataForFA)$correlations
+```
+
+```{r}
+library(ggcorrplot)
+ggcorrplot(corMatrix,
+           type = "lower") + 
+          theme(axis.text.x  = element_text(size = 5),
+                axis.text.y  = element_text(size = 5))
+```
+
+```{r}
+library(psych)
+psych::KMO(corMatrix) 
+```
+
+```{r}
+cortest.bartlett(corMatrix,n=nrow(dataForFA))$p.value>0.05
+```
+
+```{r}
+library(matrixcalc)
+
+is.singular.matrix(corMatrix)
+```
+
+```{r}
+fa.parallel(dataForFA, fa = 'fa',correct = T,plot = F)
+```
+
+```{r}
+library(GPArotation)
+resfa <- fa(dataForFA,
+            nfactors = 2,
+            cor = 'mixed',
+            rotate = "varimax",
+            fm="minres")
+```
+
+```{r}
+print(resfa$loadings)
+```
+
+```{r}
+print(resfa$loadings,cutoff = 0.5)
+```
+
+```{r}
+fa.diagram(resfa,main = "EFA results")
+```
+```{r}
+ps=c("Airoirts","Percent.of.Obesity")
+notPs=setdiff(names(dataForFA),ps)
+dataForFA2=dataForFA[,notPs]
+```
+
+```{r}
+library(polycor)
+corMatrix2=polycor::hetcor(dataForFA2)$correlations
+```
+
+```{r}
+library(psych)
+psych::KMO(corMatrix2) 
+```
+
+```{r}
+cortest.bartlett(corMatrix2,n=nrow(dataForFA2))$p.value>0.05
+```
+
+```{r}
+library(matrixcalc)
+is.singular.matrix(corMatrix2)
+```
+
+```{r}
+fa.parallel(dataForFA2, fa = 'fa',correct = T,plot = F)
+```
+
+```{r}
+library(GPArotation)
+resfa <- fa(dataForFA2,
+            nfactors = 3,
+            cor = 'mixed',
+            rotate = "varimax",
+            fm="minres")
+```
+
+```{r}
+fa.diagram(resfa,main = "EFA results (2)")
+```
+```{r}
+library(GPArotation)
+resfa <- fa(dataForFA2,
+            nfactors = 2,
+            cor = 'mixed',
+            rotate = "varimax",
+            fm="minres")
+
+fa.diagram(resfa,main = "EFA results (3)")
+```
+```{r}
+sort(resfa$communality)
+```
+
+```{r}
+sort(resfa$complexity)
+```
+
+```{r}
+summary(resfa$scores)
+```
+
+```{r}
+library(BBmisc)
+efa_scores=normalize(resfa$scores, 
+                       method = "range", 
+                       margin=2, # by column
+                       range = c(0, 10))
+
+fromPy$Health_efa=efa_scores[,1]
+fromPy$Econ_efa=efa_scores[,2]
+```
+
+```{r}
+saveRDS(fromPy,file = 'fromPyPlus.RDS')
+```
+
